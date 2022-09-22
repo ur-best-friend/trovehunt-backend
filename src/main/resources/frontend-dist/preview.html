@@ -1,0 +1,26 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Reader</title>
+</head>
+<body>
+    <input type="file" id="upload" onselect="fileChange">
+    <button onclick="fileChange(document.getElementById('upload'))">preview</button>
+    <img id="preview">
+</body>
+<script>
+async function fileChange(el) {
+    let file = el.files[0];
+    let preview = document.getElementById('preview');
+
+    var fr = new FileReader();  
+    fr.onload = setImgFromReader;
+    fr.readAsDataURL(file);
+}
+function setImgFromReader(e){
+    console.log('result',e);
+    document.getElementById('preview').src = e.target.result;
+}
+</script>
+</html>

@@ -1,0 +1,11 @@
+.idea/
+target
+import
+*iml
+serve-images-storage/*
+deployment/docker/nginx/volume-files/conf.d/default.conf
+.env
+*.sh
+importReport.csv
+
+README.OLD.MD

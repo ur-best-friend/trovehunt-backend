@@ -1,0 +1,41 @@
+server {
+    server_name ${API_HOST};
+
+    listen 443 ssl;
+    listen [::]:443 ssl;
+
+    include /etc/nginx/snippets/use-ssl.conf;
+    root /;
+
+    location /images/ {
+        autoindex off;
+        alias /usr/share/nginx/html/serve_images/;
+    }
+
+    location / {
+        autoindex off;
+        root /usr/share/nginx/html/serve_frontend/;
+        try_files $uri $uri/ @fwdapi;
+
+        # expires max;
+    }
+
+    location @fwdapi {
+        proxy_set_header X-Real-IP  $remote_addr;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+
+        proxy_pass http://${API_HOST}:${API_PORT};
+    }
+}
+
+server {
+    server_name ${API_HOST};
+
+    listen 80;
+    listen [::]:80;
+
+    # return 302 https://$server_name$request_uri;
+    rewrite ^(.*) https://$server_name$request_uri;
+}

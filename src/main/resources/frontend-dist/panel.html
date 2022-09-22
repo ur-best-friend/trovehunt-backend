@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Trovehunt: Admin Panel</title>
+    <style>
+        .finding-item:hover{
+            background-color: lightblue;
+        }
+        #finding-img{
+            max-height: 35vh;
+            max-width: 100vw;
+        }
+    </style>
+</head>
+<body>
+<form id="before-token" name="submit-token" action="javascript:submitAdminToken(document.forms['submit-token']['token'].value)">
+    <input name="token" placeholder="admin token">
+    <input type="submit" value="Отправить">
+</form>
+<div id="after-token" style="display: none;">
+    <img id="finding-img">
+    <ul id="finding-item-list">
+
+    </ul>
+</div>
+</body>
+<script>
+const afterToken = document.getElementById('after-token');
+const beforeToken = document.getElementById('before-token');
+
+const cleanUrl = location.protocol + '//' + location.hostname + (location.port ? ':'+location.port : '');
+const getUrlForImg = function (url) { return cleanUrl+'/images/'+url; }
+const verifyUrl = function (id) { return cleanUrl+'/api/admin/findings/verify/'+id; }
+const declineUrl = function (id) { return cleanUrl+'/api/admin/findings/decline/'+id; }
+
+const findingEl = document.createElement('li');
+findingEl.appendChild(document.createElement('span'));
+findingEl.appendChild(document.createElement('button'));
+findingEl.appendChild(document.createElement('button'));
+findingEl.classList.add('finding-item');
+
+const findingItemList = document.getElementById('finding-item-list');
+const findingImg = document.getElementById('finding-img');
+
+const findingDateOptions = {year: 'numeric', month: 'numeric', day: 'numeric' };
+
+var adminToken;
+
+// TODO: Ensure everything works
+
+class Finding{
+    constructor(id,address,imgUrl,date){
+        console.log('id:'+id+' imgUrl: '+imgUrl);
+        let findingElement = findingEl.cloneNode(true);
+        let findingElementText = findingElement.getElementsByTagName('span')[0];
+        let findingElementButtonVerify = findingElement.getElementsByTagName('button')[0];
+        let findingElementButtonDecline = findingElement.getElementsByTagName('button')[1];
+        findingElementText.innerHTML = address+"<br>"+date.toLocaleDateString('en-US', findingDateOptions);
+
+        findingElementButtonVerify.addEventListener('click',()=>putFinding(id,findingElementButtonVerify,verifyUrl(id)));
+        findingElementButtonVerify.innerHTML = 'Подтвердить';
+
+        findingElementButtonDecline.addEventListener('click',()=>putFinding(id,findingElementButtonDecline,declineUrl(id)));
+        findingElementButtonDecline.innerHTML = 'Отклонить';
+
+        findingElement.addEventListener('mouseover',()=>updateFindingImg(imgUrl,findingElement));
+
+        this.findingElement = findingElement;
+
+        return this;
+    }
+    getElement(){
+        return this.findingElement;
+    }
+}
+async function putFinding(id,el,url){
+    let veifyRequest = await fetch(url,{
+        method: 'put',
+        headers: {'adminToken':adminToken}
+    });
+    if(veifyRequest.ok && !veifyRequest.redirected) el.parentElement.style='display: none;';
+    else{
+        alert('Сетевая ошибка, код состояния: '+veifyRequest.status+(veifyRequest.status==401 ? '\nНеверный админ. токен' : '')); 
+        return;
+    }
+}
+function updateFindingImg(imgPath,el){
+    let url = getUrlForImg(imgPath);
+    document.getElementById('finding-img').src = url;
+}
+async function submitAdminToken(token){
+    let unverifiedRequest = await fetch('/api/admin/findings/unverified',{
+        method: 'get',
+        headers: {'adminToken': token}
+    });
+    if(!unverifiedRequest.ok){ 
+        alert('Сетевая ошибка, код состояния: '+unverifiedRequest.status+(unverifiedRequest.status==401 ? '\nНеверный админ. токен' : '')); return;
+    }
+    let unverifiedJson = await unverifiedRequest.json();
+    if(unverifiedJson.length < 1)
+        alert('Верный админ. токен, 0 находок на проверку.');
+    
+    unverifiedJson.forEach(f=>{
+        let finding = new Finding(f.id, f.treasure.formattedLocation, f.userImage.url, new Date(f.date));
+        findingItemList.appendChild(finding.getElement());
+    });
+    adminToken = token;
+    beforeToken.style='display: none;';
+    afterToken.style='display: block;';
+}
+</script>
+</html>

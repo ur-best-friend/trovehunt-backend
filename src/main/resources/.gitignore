@@ -1,0 +1,5 @@
+#*.properties
+#!*.example.properties
+#!hibernate.properties
+!application*
+public/*

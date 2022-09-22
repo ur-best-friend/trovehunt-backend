@@ -1,0 +1,117 @@
+version: '3.3'
+services:
+  # TODO:
+  #  - dedicated PROD profile, check links in api's Dockerfile ?use https://docs.docker.com/compose/profiles/
+  #  - check the reason for user sessions dropping after restart
+  #  - replace hardcode paths to frontend and backend files with .env variables
+    api:
+      build:
+        context: ./
+        dockerfile: deployment/docker/api/Dockerfile
+      # TODO: Ensure this will work even if .m2 is not installed on host, also ensure it's not necessary to move to outside .env file
+      #       https://stackoverflow.com/a/36234272
+      #       https://stackoverflow.com/a/60525739
+      volumes:
+        - ./:/app
+        - "${PATH_MAVEN_M2}:/root/.m2"
+      working_dir: /app
+      command: bash -c "
+                  test -d 'src/main/java' &&
+                    (echo 'src/main/java folder exists, running from source' && mvn spring-boot:run) ||
+                    (echo 'src/main/java folder doesn'\''t exist, running from jar' && java -jar 'trovehunt-backend.jar')"
+      links:
+        - mysql
+        - "kafka:${KAFKA_BROKER_HOST}"
+      depends_on:
+        - mysql
+        - kafka
+      ports:
+        - "${API_PORT}:${API_PORT}"
+      environment:
+        - OPENCAGE_API_KEY=${OPENCAGE_API_KEY}
+        - SERVER_PORT=${API_PORT}
+        - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:${DB_PORT}/${DB_DATABASE}?useUnicode=true&serverTimezone=UTC
+        - DB_USER=${DB_USER}
+        - DB_PASSWORD_ROOT=${DB_PASSWORD}
+        - KAFKA_BROKER_ADDRESS=${KAFKA_BROKER_HOST}:${KAFKA_BROKER_PORT}    #${KAFKA_BROKER_HOST}:29092
+        - API_HOST=${API_HOST}
+    mysql:
+      build:
+        context: ./
+        dockerfile: deployment/docker/mysql/Dockerfile
+      #    DB is already created with a database that is specified in MYSQL_DATABASE environment entry
+      #    volumes:
+      #      - ./deployment/docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+      ports:
+        - "${DB_PORT}:3306"
+      environment:
+        - MYSQL_DATABASE=${DB_DATABASE}
+        - MYSQL_PORT=${DB_PORT}
+        - MYSQL_USER=${DB_USER}
+        - MYSQL_PASSWORD=${DB_PASSWORD}
+        - MYSQL_ROOT_PASSWORD=${DB_PASSWORD_ROOT}
+      volumes:
+        - mysql-datavolume:/var/lib/mysql
+    nginx:
+      build:
+        context: ./
+        dockerfile: deployment/docker/nginx/Dockerfile
+      volumes:
+        - "${PATH_SERVE_IMAGES}:/usr/share/nginx/html/serve_images"
+        - "${PATH_SERVE_FRONTEND}:/usr/share/nginx/html/serve_frontend"
+        - "./deployment/docker/nginx/volume-files/conf.d/:/etc/nginx/conf.d/"
+        - "./deployment/docker/nginx/volume-files/snippets/:/etc/nginx/snippets/"
+        - "./deployment/docker/nginx/volume-files/cert/:/etc/nginx/cert/"
+        - "./deployment/docker/nginx/volume-files/docker-entrypoint.sh:/home/docker-entrypoint.sh"
+      ports:
+        - "80:80"
+        - "443:443"
+      links:
+        - "api:${API_HOST}"
+      entrypoint: /home/docker-entrypoint.sh
+      command: ["nginx", "-g", "daemon off;"]
+      environment:
+        API_PORT: ${API_PORT}
+        API_HOST: ${API_HOST}
+    zookeeper:
+      image: bitnami/zookeeper:latest
+      environment:
+        ZOOKEEPER_CLIENT_PORT: ${KAFKA_ZOOKEEPER_PORT}
+        ALLOW_ANONYMOUS_LOGIN: "yes"
+      ports:
+        - "${KAFKA_ZOOKEEPER_PORT}:2181"
+
+    kafka:
+      image: bitnami/kafka:latest
+      depends_on:
+        - zookeeper
+      links:
+        - "zookeeper:${KAFKA_ZOOKEEPER_HOST}"
+      ports:
+        - "${KAFKA_BROKER_PORT}:29092"
+      environment:
+        KAFKA_CFG_ZOOKEEPER_CONNECT: "${KAFKA_ZOOKEEPER_HOST}:${KAFKA_ZOOKEEPER_PORT}"
+        ALLOW_PLAINTEXT_LISTENER: "yes"
+        KAFKA_LISTENERS: "INTERNAL://:${KAFKA_BROKER_PORT}"   #"INTERNAL://:29092,EXTERNAL://:${KAFKA_BROKER_PORT}"
+        KAFKA_ADVERTISED_LISTENERS: "INTERNAL://kafka:${KAFKA_BROKER_PORT}"   #INTERNAL://kafka:29092,EXTERNAL://kafka:${KAFKA_BROKER_PORT}
+        KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "INTERNAL:PLAINTEXT"  #INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+        KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"
+
+    kafka_ui:
+      #      image: obsidiandynamics/kafdrop
+      image: provectuslabs/kafka-ui
+      depends_on:
+        - kafka
+      links:
+        - "kafka:${KAFKA_BROKER_HOST}"
+      ports:
+        - "8080:8080"
+      environment:
+        KAFKA_CLUSTERS_0_NAME: local
+        KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "${KAFKA_BROKER_HOST}:${KAFKA_BROKER_PORT}"
+#      environment:
+#        KAFKA_BROKERCONNECT: "${KAFKA_BROKER_HOST}:${KAFKA_BROKER_PORT}"  #"${KAFKA_BROKER_HOST}:29092"
+#        SERVER_SERVLET_CONTEXTPATH: "/"
+#        JVM_OPTS: "-Xms16M -Xmx48M -Xss180K -XX:-TieredCompilation -XX:+UseStringDeduplication -noverify"
+volumes:
+  mysql-datavolume:
